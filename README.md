@@ -10,6 +10,15 @@ It provides:
 
 **Status: early draft / not production-ready.**
 
+## Local setup
+
+```bash
+pnpm install
+pnpm lint
+pnpm typecheck
+pnpm test
+```
+
 ## Dependencies and integrations
 
 This module depends on and integrates with:
