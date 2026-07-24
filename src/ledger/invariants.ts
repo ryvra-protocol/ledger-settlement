@@ -8,16 +8,22 @@ export interface InvariantResult {
 export function validateBalancedPostings(postings: Posting[]): InvariantResult {
   let debits = 0n;
   let credits = 0n;
+  const seenPostingIds = new Set<string>();
 
   for (const posting of postings) {
-    if (posting.amountMinor < 0n) {
-      return { ok: false, reason: "amountMinor must be non-negative" };
+    if (seenPostingIds.has(posting.posting_id)) {
+      return { ok: false, reason: "posting_id must be unique within a ledger event" };
+    }
+    seenPostingIds.add(posting.posting_id);
+
+    if (posting.amount_minor < 0n) {
+      return { ok: false, reason: "amount_minor must be non-negative" };
     }
 
     if (posting.side === PostingSide.Debit) {
-      debits += posting.amountMinor;
+      debits += posting.amount_minor;
     } else {
-      credits += posting.amountMinor;
+      credits += posting.amount_minor;
     }
   }
 

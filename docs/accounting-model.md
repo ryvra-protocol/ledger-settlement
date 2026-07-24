@@ -48,5 +48,5 @@ Transitions between dimensions must remain double-entry balanced and append-only
 ### 3) Failed settlement compensation event
 
 - Original execution postings remain immutable.
-- Compensation event mirrors economic reversal via new event id.
+- Compensation event mirrors economic reversal via new `ledger_event_id`.
 - State machine marks failed/compensated outcome with linked `reference_id`.
