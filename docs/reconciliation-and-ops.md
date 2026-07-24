@@ -12,7 +12,7 @@
 
 - Exceptions are prioritized by materiality and risk classification.
 - Operators must document disposition for each exception:
-  - resolved (timing or data correction)
+  - resolved (timing resolution or data clarification)
   - compensated (append-only compensation event)
   - escalated (policy/risk/legal)
 - Auto-close thresholds and SLA targets are **TBD by policy/governance**.

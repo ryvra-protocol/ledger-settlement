@@ -18,6 +18,17 @@ Defines the v1 baseline for ledger semantics and settlement lifecycle in Ryvra L
 - `posting_id`: immutable identifier for a posting line.
 - `reference_id`: external or cross-module idempotency/correlation reference.
 
+### Event envelope contract
+
+All emitted ledger/settlement events use:
+
+- `event_id`
+- `correlation_id`
+- `reference_id`
+- `event_type`
+- `timestamp`
+- `payload`
+
 ## Posting model
 
 ### Debit/credit invariants

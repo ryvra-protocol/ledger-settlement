@@ -1,15 +1,15 @@
 import type { ReferenceId } from "../types.js";
 
 export interface ReconciliationResult {
-  matchedReferenceIds: ReferenceId[];
-  mismatchedReferenceIds: ReferenceId[];
+  matched_reference_ids: ReferenceId[];
+  mismatched_reference_ids: ReferenceId[];
 }
 
 export class ReconciliationService {
-  reconcile(candidateReferenceIds: ReferenceId[]): ReconciliationResult {
+  reconcile(candidate_reference_ids: ReferenceId[]): ReconciliationResult {
     return {
-      matchedReferenceIds: [],
-      mismatchedReferenceIds: candidateReferenceIds
+      matched_reference_ids: [],
+      mismatched_reference_ids: candidate_reference_ids
     };
   }
 }
