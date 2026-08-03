@@ -22,6 +22,7 @@ export interface Posting {
 export interface LedgerEventPayload {
   ledger_event_id: LedgerEventId;
   postings: Posting[];
+  user_operation?: UserOperationExecutionReference;
 }
 
 export interface EventEnvelope<TPayload> {
@@ -56,3 +57,21 @@ export enum SettlementState {
   Reconciled = "reconciled",
   Failed = "failed"
 }
+
+export interface UserOperationExecutionReference {
+  user_op_hash: string;
+  entry_point?: string;
+  account_id?: AccountId;
+}
+
+export const USER_OPERATION_LIFECYCLE_OUTCOMES = [
+  "received",
+  "included",
+  "confirmed",
+  "settled",
+  "failed",
+  "reverted",
+  "dropped"
+] as const;
+
+export type UserOperationLifecycleOutcome = (typeof USER_OPERATION_LIFECYCLE_OUTCOMES)[number];

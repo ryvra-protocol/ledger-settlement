@@ -5,7 +5,7 @@
 1. Snapshot ledger positions at reconciliation cut-off.
 2. Ingest counterparty/external statements.
 3. Match by `reference_id`, account, asset, and amount.
-4. Classify differences: timing, data mismatch, or unresolved exception.
+4. Classify differences: timing, data mismatch, unresolved exception, and AA-specific context/failure categories.
 5. Emit reconciliation report and exception queue.
 
 ## Exception queues and operator review
@@ -31,5 +31,7 @@ Track at minimum:
 - `settlement_latency`
 - `failed_transitions`
 - `duplicate_reference_attempts`
+- `aa_userop_failed_count`
+- `aa_context_mismatch_count`
 
 Alert thresholds and paging policy are **TBD by policy/governance**.
