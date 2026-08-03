@@ -9,7 +9,7 @@ test("AssetNormalizer canonicalizes aliases deterministically", () => {
   });
 
   assert.equal(normalizer.normalizeAssetId(" usd "), "USD");
-  assert.equal(normalizer.normalizeAssetId("US DOLLAR"), "US DOLLAR");
+  assert.equal(normalizer.normalizeAssetId("US DOLLAR"), "USD");
   assert.equal(normalizer.normalizeAssetId(" US Dollar "), "USD");
 });
 
