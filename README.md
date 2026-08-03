@@ -42,9 +42,10 @@ Core concerns:
 
 - `src/types.ts`: domain entities, state enums, and interfaces.
 - `src/ledger/posting-engine.ts`: posting engine interface-first stub.
+- `src/ledger/asset-normalization.ts`: canonical asset-id and amount normalization helpers.
 - `src/ledger/invariants.ts`: debit/credit and posting-level invariant checks.
 - `src/settlement/state-machine.ts`: settlement transition guard stub.
-- `src/reconciliation/reconciliation-service.ts`: reconciliation process stub.
+- `src/reconciliation/reconciliation-service.ts`: reconciliation service with unified mismatch classification hooks.
 - `docs/rfc-0004-ledger-and-settlement-state-machine.md`: v1 state-machine and ledger RFC.
 - `docs/accounting-model.md`: chart of accounts and balance semantics.
 - `docs/reconciliation-and-ops.md`: daily reconciliation and ops model.

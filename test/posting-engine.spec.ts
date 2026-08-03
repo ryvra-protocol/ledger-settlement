@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { PostingSide, StubPostingEngine, type LedgerEvent } from "../src/index.js";
+import { AssetNormalizer, PostingSide, StubPostingEngine, type LedgerEvent } from "../src/index.js";
 
 const baseEvent = (): LedgerEvent => ({
   event_id: "evt-1",
@@ -74,4 +74,16 @@ test("prepare rejects posting reuse across different ledger events", () => {
   assert.throws(() => {
     engine.prepare(newEvent);
   }, /duplicate posting_id: post-1/);
+});
+
+test("prepare normalizes asset aliases when normalizer is configured", () => {
+  const normalizer = new AssetNormalizer({
+    assets: [{ canonical_asset_id: "USD", decimals: 2, aliases: ["usd"] }]
+  });
+  const engine = new StubPostingEngine(normalizer);
+  const event = baseEvent();
+
+  const prepared = engine.prepare(event);
+  assert.equal(prepared.payload.postings[0]?.asset_id, "USD");
+  assert.equal(prepared.payload.postings[1]?.asset_id, "USD");
 });
