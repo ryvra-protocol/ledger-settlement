@@ -414,7 +414,6 @@ export class ReservationLedgerService {
         this.operationByIdempotency.set(idempotencyScope, { fingerprint, resultId: current.reservationId });
       }
 
-      await this.applyDeferredEvents(current.reservationId);
       return cloneReservation(current);
     });
   }
@@ -459,148 +458,146 @@ export class ReservationLedgerService {
 
   async recordSettlementEvent(input: RecordSettlementEventInput): Promise<RecordSettlementEventResult> {
     const reservation = this.requireReservation(input.reservationId);
-    return this.withAccountLock(reservation.accountId, async () => {
-      const current = this.requireReservation(input.reservationId);
-      if (current.settlementId && current.settlementId !== input.settlementId) {
-        throw new Error(`reservation ${current.reservationId} already linked to settlement ${current.settlementId}`);
-      }
+    const current = this.requireReservation(input.reservationId);
+    if (current.settlementId && current.settlementId !== input.settlementId) {
+      throw new Error(`reservation ${current.reservationId} already linked to settlement ${current.settlementId}`);
+    }
 
-      const ingestionKey = input.idempotencyKey
-        ? `settlement:${input.intentId ?? current.intentId}:${input.eventType}:${input.idempotencyKey}`
-        : `settlement:${input.settlementId}:${input.eventType}:${input.chainEventId ?? ""}:${input.blockNumber?.toString() ?? ""}`;
-      if (this.ingestionKeys.has(ingestionKey)) {
-        return { applied: false, deferred: false, reservation: cloneReservation(current) };
-      }
+    const ingestionKey = input.idempotencyKey
+      ? `settlement:${input.intentId ?? current.intentId}:${input.eventType}:${input.idempotencyKey}`
+      : `settlement:${input.settlementId}:${input.eventType}:${input.chainEventId ?? ""}:${input.blockNumber?.toString() ?? ""}`;
+    if (this.ingestionKeys.has(ingestionKey)) {
+      return { applied: false, deferred: false, reservation: cloneReservation(current) };
+    }
 
-      const targetState = eventTypeToState(input.eventType);
-      if (current.state === targetState) {
-        this.ingestionKeys.add(ingestionKey);
-        return { applied: false, deferred: false, reservation: cloneReservation(current) };
-      }
-
-      if (!canTransitionReservation(current.state, targetState)) {
-        if (isOutOfOrderForwardTransition(current.state, targetState)) {
-          this.enqueueDeferredEvent(current.reservationId, input);
-          this.ingestionKeys.add(ingestionKey);
-          this.appendLifecycleEvent({
-            reservation: current,
-            settlementId: input.settlementId,
-            eventType: `settlement.${input.eventType}.deferred`,
-            state: current.state,
-            idempotencyKey: input.idempotencyKey,
-            chainEventId: input.chainEventId,
-            transactionHash: input.transactionHash,
-            blockNumber: input.blockNumber,
-            finalityMarker: input.finalityMarker,
-            metadata: input.metadata,
-            provenance: input
-          });
-          return { applied: false, deferred: true, reservation: cloneReservation(current) };
-        }
-        throw new Error(`invalid settlement event transition: ${current.state} -> ${targetState}`);
-      }
-
-      const transitioned = await this.transitionReservation({
-        reservationId: current.reservationId,
-        toState: targetState,
-        idempotencyKey: input.idempotencyKey,
-        settlementId: input.settlementId,
-        chainEventId: input.chainEventId,
-        transactionHash: input.transactionHash,
-        blockNumber: input.blockNumber,
-        finalityMarker: input.finalityMarker,
-        metadata: input.metadata,
-        ...sanitizeProvenance(input)
-      });
-
+    const targetState = eventTypeToState(input.eventType);
+    if (current.state === targetState) {
       this.ingestionKeys.add(ingestionKey);
-      this.upsertSettlementRecord(transitioned, input);
-      return { applied: true, deferred: false, reservation: transitioned };
+      return { applied: false, deferred: false, reservation: cloneReservation(current) };
+    }
+
+    if (!canTransitionReservation(current.state, targetState)) {
+      if (isOutOfOrderForwardTransition(current.state, targetState)) {
+        this.enqueueDeferredEvent(current.reservationId, input);
+        this.ingestionKeys.add(ingestionKey);
+        this.appendLifecycleEvent({
+          reservation: current,
+          settlementId: input.settlementId,
+          eventType: `settlement.${input.eventType}.deferred`,
+          state: current.state,
+          idempotencyKey: input.idempotencyKey,
+          chainEventId: input.chainEventId,
+          transactionHash: input.transactionHash,
+          blockNumber: input.blockNumber,
+          finalityMarker: input.finalityMarker,
+          metadata: input.metadata,
+          provenance: input
+        });
+        return { applied: false, deferred: true, reservation: cloneReservation(current) };
+      }
+      throw new Error(`invalid settlement event transition: ${current.state} -> ${targetState}`);
+    }
+
+    const transitioned = await this.transitionReservation({
+      reservationId: current.reservationId,
+      toState: targetState,
+      idempotencyKey: input.idempotencyKey,
+      settlementId: input.settlementId,
+      chainEventId: input.chainEventId,
+      transactionHash: input.transactionHash,
+      blockNumber: input.blockNumber,
+      finalityMarker: input.finalityMarker,
+      metadata: input.metadata,
+      ...sanitizeProvenance(input)
     });
+
+    this.ingestionKeys.add(ingestionKey);
+    this.upsertSettlementRecord(transitioned, input);
+    await this.applyDeferredEvents(current.reservationId);
+    return { applied: true, deferred: false, reservation: transitioned };
   }
 
   async runReconciliation(input: RunReconciliationInput): Promise<ReconciliationRecord> {
     const reservation = this.requireReservation(input.reservationId);
-    return this.withAccountLock(reservation.accountId, async () => {
-      const current = this.requireReservation(input.reservationId);
-      const settlementId = input.settlementId;
-      if (current.settlementId && current.settlementId !== settlementId) {
-        throw new Error(`reconciliation settlement mismatch for reservation ${current.reservationId}`);
-      }
+    const current = this.requireReservation(input.reservationId);
+    const settlementId = input.settlementId;
+    if (current.settlementId && current.settlementId !== settlementId) {
+      throw new Error(`reconciliation settlement mismatch for reservation ${current.reservationId}`);
+    }
 
-      const matched = current.amountMinor === input.settledAmountMinor;
-      const inferredReason = inferDiscrepancyReason(current.amountMinor, input.settledAmountMinor, matched);
-      const discrepancyReasonCode = input.discrepancyReasonCode ?? inferredReason;
+    const matched = current.amountMinor === input.settledAmountMinor;
+    const inferredReason = inferDiscrepancyReason(current.amountMinor, input.settledAmountMinor, matched);
+    const discrepancyReasonCode = input.discrepancyReasonCode ?? inferredReason;
 
-      if (canTransitionReservation(current.state, "reconciling")) {
-        await this.transitionReservation({
-          reservationId: current.reservationId,
-          toState: "reconciling",
-          idempotencyKey: `reconciling:${settlementId}`,
-          settlementId,
-          ...sanitizeProvenance(input)
-        });
-      }
-
-      const finalState: ReservationState = matched ? "reconciled" : "partial";
-      if (canTransitionReservation(this.requireReservation(current.reservationId).state, finalState)) {
-        await this.transitionReservation({
-          reservationId: current.reservationId,
-          toState: finalState,
-          idempotencyKey: `reconciled:${settlementId}:${discrepancyReasonCode}`,
-          settlementId,
-          ...sanitizeProvenance(input)
-        });
-      }
-
-      const reconciliationId = `rec-${++this.reconciliationCounter}`;
-      const now = new Date();
-      const reservationAfter = this.requireReservation(current.reservationId);
-      const previousHash = this.lastEventHashByReservation.get(current.reservationId);
-      const payload = {
-        reservationId: reservationAfter.reservationId,
+    if (canTransitionReservation(current.state, "reconciling")) {
+      await this.transitionReservation({
+        reservationId: current.reservationId,
+        toState: "reconciling",
+        idempotencyKey: `reconciling:${settlementId}`,
         settlementId,
-        expectedAmountMinor: reservationAfter.amountMinor,
-        settledAmountMinor: input.settledAmountMinor,
-        discrepancyReasonCode,
-        matched,
-        retryWorkflowMarker: input.retryWorkflowMarker,
-        repairWorkflowMarker: input.repairWorkflowMarker,
-        evidence: input.evidence ?? {},
-        provenance: sanitizeProvenance(input),
-        createdAt: now.toISOString(),
-        previousHash
-      };
-
-      const eventHash = hashPayload(payload);
-      const record: ReconciliationRecord = {
-        reconciliationId,
-        reservationId: reservationAfter.reservationId,
-        settlementId,
-        expectedAmountMinor: reservationAfter.amountMinor,
-        settledAmountMinor: input.settledAmountMinor,
-        discrepancyReasonCode,
-        matched,
-        retryWorkflowMarker: input.retryWorkflowMarker,
-        repairWorkflowMarker: input.repairWorkflowMarker,
-        evidence: input.evidence ?? {},
-        previousEventHash: previousHash,
-        eventHash,
-        createdAt: now,
-        ...sanitizeProvenance(input)
-      };
-
-      this.reconciliationRecords.set(reconciliationId, record);
-      this.lastEventHashByReservation.set(reservationAfter.reservationId, eventHash);
-      this.upsertSettlementRecord(reservationAfter, {
-        reservationId: reservationAfter.reservationId,
-        settlementId,
-        settledAmountMinor: input.settledAmountMinor,
         ...sanitizeProvenance(input)
       });
+    }
 
-      return cloneReconciliation(record);
+    const finalState: ReservationState = matched ? "reconciled" : "partial";
+    if (canTransitionReservation(this.requireReservation(current.reservationId).state, finalState)) {
+      await this.transitionReservation({
+        reservationId: current.reservationId,
+        toState: finalState,
+        idempotencyKey: `reconciled:${settlementId}:${discrepancyReasonCode}`,
+        settlementId,
+        ...sanitizeProvenance(input)
+      });
+    }
+
+    const reconciliationId = `rec-${++this.reconciliationCounter}`;
+    const now = new Date();
+    const reservationAfter = this.requireReservation(current.reservationId);
+    const previousHash = this.lastEventHashByReservation.get(current.reservationId);
+    const payload = {
+      reservationId: reservationAfter.reservationId,
+      settlementId,
+      expectedAmountMinor: reservationAfter.amountMinor,
+      settledAmountMinor: input.settledAmountMinor,
+      discrepancyReasonCode,
+      matched,
+      retryWorkflowMarker: input.retryWorkflowMarker,
+      repairWorkflowMarker: input.repairWorkflowMarker,
+      evidence: input.evidence ?? {},
+      provenance: sanitizeProvenance(input),
+      createdAt: now.toISOString(),
+      previousHash
+    };
+
+    const eventHash = hashPayload(payload);
+    const record: ReconciliationRecord = {
+      reconciliationId,
+      reservationId: reservationAfter.reservationId,
+      settlementId,
+      expectedAmountMinor: reservationAfter.amountMinor,
+      settledAmountMinor: input.settledAmountMinor,
+      discrepancyReasonCode,
+      matched,
+      retryWorkflowMarker: input.retryWorkflowMarker,
+      repairWorkflowMarker: input.repairWorkflowMarker,
+      evidence: input.evidence ?? {},
+      previousEventHash: previousHash,
+      eventHash,
+      createdAt: now,
+      ...sanitizeProvenance(input)
+    };
+
+    this.reconciliationRecords.set(reconciliationId, record);
+    this.lastEventHashByReservation.set(reservationAfter.reservationId, eventHash);
+    this.upsertSettlementRecord(reservationAfter, {
+      reservationId: reservationAfter.reservationId,
+      settlementId,
+      settledAmountMinor: input.settledAmountMinor,
+      ...sanitizeProvenance(input)
     });
+
+    void reservation;
+    return cloneReconciliation(record);
   }
 
   getReservation(reservationId: string): ReservationRecord | undefined {
@@ -721,8 +718,7 @@ export class ReservationLedgerService {
       createdAt: now,
       updatedAt: now,
       ...sanitizeProvenance(reservation),
-      ...sanitizeProvenance(input),
-      intentId: reservation.intentId
+      ...sanitizeProvenance(input)
     };
     this.settlements.set(settlement.settlementId, settlement);
   }
@@ -781,15 +777,9 @@ export class ReservationLedgerService {
       intentId: input.reservation.intentId,
       eventType: input.eventType,
       state: input.state,
-      idempotencyKey: input.idempotencyKey,
-      chainEventId: input.chainEventId,
-      blockNumber: input.blockNumber,
-      finalityMarker: input.finalityMarker,
-      transactionHash: input.transactionHash,
-      metadata: input.metadata,
-      provenance: sanitizeProvenance({ ...input.reservation, ...input.provenance }),
+      previousEventHash,
       createdAt: now.toISOString(),
-      previousEventHash
+      provenance: sanitizeProvenance({ ...input.reservation, ...input.provenance }),
     };
 
     const eventHash = hashPayload(payload);
@@ -855,16 +845,16 @@ export class ReservationLedgerService {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const next = previous.then(() => gate);
 
-    this.accountLocks.set(accountId, previous.then(() => gate));
+    this.accountLocks.set(accountId, next);
     await previous;
 
     try {
       return await fn();
     } finally {
       release();
-      const pending = this.accountLocks.get(accountId);
-      if (pending === previous.then(() => gate)) {
+      if (this.accountLocks.get(accountId) === next) {
         this.accountLocks.delete(accountId);
       }
     }
